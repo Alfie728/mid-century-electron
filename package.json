@@ -33,6 +33,7 @@
     "@typescript-eslint/parser": "^5.62.0",
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
     "css-loader": "^6.11.0",
+    "daisyui": "^5.5.8",
     "electron": "39.2.5",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -45,6 +46,7 @@
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "tailwindcss": "^4.1.17"
   }
 }

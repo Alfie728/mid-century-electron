@@ -14,7 +14,7 @@ export default function App() {
     useRecorder(getPreviewStream);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 text-base-content flex items-center justify-center px-6 py-10">
+    <div className="min-h-screen bg-linear-to-br from-base-200 via-base-100 to-base-200 text-base-content flex items-center justify-center px-6 py-10">
       <div className="w-full">
         <div className="card bg-base-100 shadow-2xl border border-base-200">
           <div className="card-body gap-6">
