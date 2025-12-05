@@ -29,12 +29,12 @@ export function useDesktopPreview(videoRef: RefObject<HTMLVideoElement>) {
   const [selectedSourceId, setSelectedSourceId] = useState<string>("");
   const previewStreamRef = useRef<MediaStream | null>(null);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Cleanup function to stop the preview stream when the component unmounts
+    return () => {
       stopPreviewStream();
-    },
-    [],
-  );
+    };
+  }, []);
 
   const stopPreviewStream = () => {
     previewStreamRef.current?.getTracks().forEach((track) => track.stop());
