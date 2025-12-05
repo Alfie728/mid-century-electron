@@ -1,121 +1,61 @@
-import { DesktopCapturerSource, ipcRenderer } from "electron";
-import { writeFile } from "fs";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { useDesktopSources } from "./hooks/useDesktopSources";
+import { useDesktopPreview } from "./hooks/useDesktopPreview";
+import { useRecorder } from "./hooks/useRecorder";
+import { SourceSelect } from "./components/SourceSelect";
+import { RecorderControls } from "./components/RecorderControls";
 
 export default function App() {
-  const [inputSources, setInputSources] = useState<DesktopCapturerSource[]>([]);
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
+  const inputSources = useDesktopSources();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<BlobPart[]>([]);
-
-  useEffect(() => {
-    (async () => {
-      const sources = (await ipcRenderer.invoke(
-        "getSources",
-      )) as DesktopCapturerSource[];
-      setInputSources(sources);
-    })();
-  }, []);
-
-  const handleStartRecording = async () => {
-    if (!selectedSourceId || !videoRef.current || isRecording) return;
-
-    const os = (await ipcRenderer.invoke("getOperatingSystem")) as string;
-    const audio =
-      os === "darwin"
-        ? false
-        : {
-            mandatory: {
-              chromeMediaSource: "desktop",
-            },
-          };
-
-    const constraints = {
-      audio,
-      video: {
-        mandatory: {
-          chromeMediaSource: "desktop",
-          chromeMediaSourceId: selectedSourceId,
-        },
-      },
-    } as unknown as MediaStreamConstraints;
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    videoRef.current.srcObject = stream;
-    await videoRef.current.play();
-
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: "video/webm; codecs=vp9",
-    });
-    mediaRecorderRef.current = mediaRecorder;
-    mediaRecorder.ondataavailable = (event: BlobEvent) => {
-      recordedChunksRef.current.push(event.data);
-    };
-    mediaRecorder.onstop = handleSaveRecording;
-    mediaRecorder.start();
-    setIsRecording(true);
-  };
-
-  const handleStopRecording = () => {
-    if (!mediaRecorderRef.current || !isRecording) return;
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream
-      .getTracks()
-      .forEach((track) => track.stop());
-    setIsRecording(false);
-  };
-
-  const handleSaveRecording = async () => {
-    if (!videoRef.current) return;
-    videoRef.current.srcObject = null;
-
-    const blob = new Blob(recordedChunksRef.current, {
-      type: "video/webm; codecs=vp9",
-    });
-    recordedChunksRef.current = [];
-
-    const buffer = Buffer.from(await blob.arrayBuffer());
-    const { canceled, filePath } = await ipcRenderer.invoke("showSaveDialog");
-    if (canceled || !filePath) return;
-
-    writeFile(filePath, buffer, () => console.log("video saved successfully!"));
-  };
+  const { selectedSourceId, previewSource, getPreviewStream } =
+    useDesktopPreview(videoRef);
+  const { isRecording, startRecording, stopRecording } =
+    useRecorder(getPreviewStream);
 
   return (
-    <div>
-      <video style={{ width: "640px", height: "480px" }} ref={videoRef}></video>
+    <div className="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 text-base-content flex items-center justify-center px-6 py-10">
+      <div className="w-full">
+        <div className="card bg-base-100 shadow-2xl border border-base-200">
+          <div className="card-body gap-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold">Screen Recorder</h1>
+                <p className="text-sm text-base-content/70">
+                  Pick a screen to preview, then start recording when ready.
+                </p>
+              </div>
+            </div>
 
-      <button
-        className="btn btn-primary"
-        onClick={handleStartRecording}
-        disabled={!selectedSourceId || isRecording}
-      >
-        Start
-      </button>
-      <button
-        className="btn btn-warning"
-        onClick={handleStopRecording}
-        disabled={!isRecording}
-      >
-        Stop
-      </button>
+            <div className="rounded-xl border border-base-300 bg-base-200/60 p-3">
+              <video
+                className="w-full aspect-video rounded-lg bg-black/60 object-contain shadow-inner"
+                ref={videoRef}
+              ></video>
+            </div>
 
-      <select
-        className="select"
-        value={selectedSourceId ?? ""}
-        onChange={(e) => setSelectedSourceId(e.target.value)}
-      >
-        <option value="" disabled>
-          Select a source
-        </option>
-        {inputSources.map((source) => (
-          <option key={source.id} value={source.id}>
-            {source.name}
-          </option>
-        ))}
-      </select>
+            <div className="grid gap-4 md:grid-cols-[auto,1fr] items-center">
+              <RecorderControls
+                isRecording={isRecording}
+                canRecord={Boolean(selectedSourceId)}
+                onStart={startRecording}
+                onStop={stopRecording}
+              />
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-base-content/70">
+                  Choose a source
+                </label>
+                <SourceSelect
+                  sources={inputSources}
+                  selectedId={selectedSourceId}
+                  onChange={(id) => previewSource(id)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
