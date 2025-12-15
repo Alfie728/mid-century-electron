@@ -54,7 +54,7 @@ Electron's process model replaces the Chrome extension's service worker and offs
 ### 2.5 Global Input Capture
 
 - Use native Node modules in main process:
-  - **iohook**: Most common, captures mouse/keyboard globally
+  - **iohook-macos**: Global mouse/keyboard hooks on macOS
   - **@nut-tree/nut-js**: Alternative with broader platform support
 - Raw events are normalized into Action objects and forwarded to renderer via IPC.
 - Filter sensitive contexts where possible (though system-wide capture has limited context).
