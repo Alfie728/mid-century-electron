@@ -11,7 +11,7 @@ export type ActionType =
   | "input";
 
 export type PointerMeta = {
-  button: number;
+  button: "left" | "right" | "other";
   clickCount: number;
 };
 

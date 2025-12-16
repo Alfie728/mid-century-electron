@@ -1,8 +1,10 @@
 import { Action, ActionType } from "./types";
-import type { EventData, MacOSEventHook } from "iohook-macos";
-import iohookMacos from "iohook-macos";
+import iohookMacos, { type EventData, type MacOSEventHook } from "iohook-macos";
+import { macKeyCodeToKeyAndCode } from "./macosKeyMap";
 
 type ActionCallback = (action: Action) => void;
+type Coords = { x: number; y: number };
+type PointerButton = "left" | "right" | "other";
 
 // Generate unique action IDs
 let actionCounter = 0;
@@ -33,13 +35,13 @@ export class InputService {
   // Drag tracking (left mouse button)
   private isLeftButtonDown = false;
   private isDragging = false;
-  private dragStartCoords: { x: number; y: number } = { x: 0, y: 0 };
-  private lastDragCoords: { x: number; y: number } = { x: 0, y: 0 };
+  private dragStartCoords: Coords = { x: 0, y: 0 };
+  private lastDragCoords: Coords = { x: 0, y: 0 };
 
   // mouse movement tracking
   private moveTimeout: NodeJS.Timeout | null = null;
   private isMoving = false;
-  private lastMoveCoords: { x: number; y: number } = { x: 0, y: 0 };
+  private lastMoveCoords: Coords = { x: 0, y: 0 };
   private moveDebounceMs = 350;
 
   private getIohook() {
@@ -158,7 +160,7 @@ export class InputService {
 
   private createBaseAction(
     type: ActionType,
-    coords: { x: number; y: number },
+    coords: Coords,
   ): Action {
     const now = Date.now();
     return {
@@ -171,22 +173,32 @@ export class InputService {
     };
   }
 
+  private emit(type: ActionType, coords: Coords, enrich?: (action: Action) => void) {
+    const action = this.createBaseAction(type, coords);
+    enrich?.(action);
+    this.emitAction(action);
+  }
+
+  private coordsFrom(event: EventData): Coords {
+    return { x: event.x ?? 0, y: event.y ?? 0 };
+  }
+
   private handleLeftMouseDown = (event: EventData) => {
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
     this.isLeftButtonDown = true;
     this.isDragging = false;
     this.dragStartCoords = coords;
     this.lastDragCoords = coords;
-    this.handleMouseDown(1, event);
+    this.handleMouseDown("left", event);
   };
 
   private handleLeftMouseUp = (event: EventData) => {
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
 
     if (this.isDragging) {
-      const action = this.createBaseAction("drag_end", coords);
-      action.pointerMeta = { button: 1, clickCount: this.clickCount };
-      this.emitAction(action);
+      this.emit("drag_end", coords, (action) => {
+        action.pointerMeta = { button: "left", clickCount: this.clickCount };
+      });
     }
 
     this.isLeftButtonDown = false;
@@ -196,7 +208,7 @@ export class InputService {
 
   private handleLeftMouseDragged = (event: EventData) => {
     if (!this.isLeftButtonDown) return;
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
     this.lastDragCoords = coords;
 
     if (!this.isDragging) {
@@ -211,23 +223,23 @@ export class InputService {
         this.emitMoveEnd();
       }
 
-      const action = this.createBaseAction("drag_start", this.dragStartCoords);
-      action.pointerMeta = { button: 1, clickCount: this.clickCount };
-      this.emitAction(action);
+      this.emit("drag_start", this.dragStartCoords, (action) => {
+        action.pointerMeta = { button: "left", clickCount: this.clickCount };
+      });
     }
   };
 
   private handleRightMouseDown = (event: EventData) => {
-    this.handleMouseDown(2, event);
+    this.handleMouseDown("right", event);
   };
 
   private handleOtherMouseDown = (event: EventData) => {
-    this.handleMouseDown(3, event);
+    this.handleMouseDown("other", event);
   };
 
-  private handleMouseDown(button: number, event: EventData) {
+  private handleMouseDown(button: PointerButton, event: EventData) {
     const now = Date.now();
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
 
     // Calculate click count (for double/triple clicks)
     const timeSinceLastClick = now - this.lastClickTime;
@@ -248,44 +260,42 @@ export class InputService {
     this.lastClickTime = now;
     this.lastClickCoords = coords;
 
-    const action = this.createBaseAction("click", coords);
-    action.pointerMeta = {
-      button,
-      clickCount: this.clickCount,
-    };
-
-    this.emitAction(action);
+    this.emit("click", coords, (action) => {
+      action.pointerMeta = { button, clickCount: this.clickCount };
+    });
   }
 
   private handleKeyDown = (event: EventData) => {
     // Use (0,0) for keyboard events - no specific coords
-    const action = this.createBaseAction("keypress", { x: 0, y: 0 });
     const keyCode = event.keyCode ?? -1;
+    const { key, code } =
+      keyCode === -1
+        ? { key: "Unknown", code: "Unknown" }
+        : macKeyCodeToKeyAndCode(keyCode, event.modifiers);
 
-    action.keyMeta = {
-      key: keyCode === -1 ? "Unknown" : `KeyCode(${keyCode})`,
-      code: keyCode === -1 ? "Unknown" : `MacKeyCode(${keyCode})`,
-      modifiers: {
-        ctrl: event.modifiers.control,
-        shift: event.modifiers.shift,
-        alt: event.modifiers.option,
-        meta: event.modifiers.command,
-      },
-      keyCodes: keyCode === -1 ? undefined : [keyCode],
-    };
-
-    this.emitAction(action);
+    this.emit("keypress", { x: 0, y: 0 }, (action) => {
+      action.keyMeta = {
+        key,
+        code,
+        modifiers: {
+          ctrl: event.modifiers.control,
+          shift: event.modifiers.shift,
+          alt: event.modifiers.option,
+          meta: event.modifiers.command,
+        },
+        keyCodes: keyCode === -1 ? undefined : [keyCode],
+      };
+    });
   };
 
   private handleMouseWheel = (event: EventData) => {
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
     this.lastScrollCoords = coords;
 
     // If not currently scrolling, emit scroll_start
     if (!this.isScrolling) {
       this.isScrolling = true;
-      const action = this.createBaseAction("scroll_start", coords);
-      this.emitAction(action);
+      this.emit("scroll_start", coords);
     }
 
     // Clear existing timeout and set a new one
@@ -300,8 +310,7 @@ export class InputService {
 
   private emitScrollEnd() {
     if (this.isScrolling) {
-      const action = this.createBaseAction("scroll_end", this.lastScrollCoords);
-      this.emitAction(action);
+      this.emit("scroll_end", this.lastScrollCoords);
       this.isScrolling = false;
     }
     this.scrollTimeout = null;
@@ -311,14 +320,13 @@ export class InputService {
     // Only record mouseover movement when not dragging.
     if (this.isLeftButtonDown || this.isDragging) return;
 
-    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    const coords = this.coordsFrom(event);
     this.lastMoveCoords = coords;
 
     // If not currently moving, emit mouseover_start
     if (!this.isMoving) {
       this.isMoving = true;
-      const action = this.createBaseAction("mouseover_start", coords);
-      this.emitAction(action);
+      this.emit("mouseover_start", coords);
     }
 
     // Clear existing timeout and set a new one
@@ -333,11 +341,7 @@ export class InputService {
 
   private emitMoveEnd() {
     if (this.isMoving) {
-      const action = this.createBaseAction(
-        "mouseover_end",
-        this.lastMoveCoords,
-      );
-      this.emitAction(action);
+      this.emit("mouseover_end", this.lastMoveCoords);
       this.isMoving = false;
     }
     this.moveTimeout = null;

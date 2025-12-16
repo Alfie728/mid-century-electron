@@ -126,7 +126,7 @@ type Action = {
   streamTimestamp?: number; // time on the stream (if recording)
   coords: { x: number; y: number };
   pointerMeta?: {
-    button: number;
+    button: "left" | "right" | "other";
     clickCount: number;
   };
   keyMeta?: {
