@@ -29,9 +29,16 @@ export class InputService {
   private clickThresholdMs = 500;
   private clickDistanceThreshold = 10;
 
+  // mouse movement tracking
+  private moveTimeout: NodeJS.Timeout | null = null;
+  private isMoving = false;
+  private lastMoveCoords: { x: number; y: number } = { x: 0, y: 0 };
+  private moveDebounceMs = 350;
+
   constructor() {
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleMouseWheel = this.handleMouseWheel.bind(this);
+    this.handleMouseMoved = this.handleMouseMoved.bind(this);
     this.handleLeftMouseDown = this.handleLeftMouseDown.bind(this);
     this.handleRightMouseDown = this.handleRightMouseDown.bind(this);
     this.handleOtherMouseDown = this.handleOtherMouseDown.bind(this);
@@ -56,7 +63,7 @@ export class InputService {
           "Fix:",
           "  - Ensure Xcode Command Line Tools are installed",
           "  - Run: npm run rebuild",
-        ].join("\n")
+        ].join("\n"),
       );
     }
   }
@@ -64,7 +71,7 @@ export class InputService {
   start(
     sessionId: string,
     sessionStartTime: number,
-    callback: ActionCallback
+    callback: ActionCallback,
   ): Promise<void> {
     if (this.isRunning) {
       console.warn("InputService is already running");
@@ -89,6 +96,10 @@ export class InputService {
     iohook.on("otherMouseDown", this.handleOtherMouseDown);
     iohook.on("keyDown", this.handleKeyDown);
     iohook.on("scrollWheel", this.handleMouseWheel);
+    iohook.on("mouseMoved", this.handleMouseMoved);
+
+    // Reduce event volume for cursor tracking (mouseover start/end only)
+    iohook.setMouseMoveThrottling(50);
 
     // Start monitoring
     iohook.startMonitoring();
@@ -113,12 +124,24 @@ export class InputService {
       this.emitScrollEnd();
     }
 
+    // Clear any pending move timeout
+    if (this.moveTimeout) {
+      clearTimeout(this.moveTimeout);
+      this.moveTimeout = null;
+    }
+
+    // If we were moving, emit mouseover_end
+    if (this.isMoving) {
+      this.emitMoveEnd();
+    }
+
     // Remove event handlers
     iohook?.removeListener("leftMouseDown", this.handleLeftMouseDown);
     iohook?.removeListener("rightMouseDown", this.handleRightMouseDown);
     iohook?.removeListener("otherMouseDown", this.handleOtherMouseDown);
     iohook?.removeListener("keyDown", this.handleKeyDown);
     iohook?.removeListener("scrollWheel", this.handleMouseWheel);
+    iohook?.removeListener("mouseMoved", this.handleMouseMoved);
 
     // Stop the hook
     iohook?.stopMonitoring();
@@ -136,7 +159,7 @@ export class InputService {
 
   private createBaseAction(
     type: ActionType,
-    coords: { x: number; y: number }
+    coords: { x: number; y: number },
   ): Action {
     const now = Date.now();
     return {
@@ -169,7 +192,7 @@ export class InputService {
     const timeSinceLastClick = now - this.lastClickTime;
     const distance = Math.sqrt(
       Math.pow(coords.x - this.lastClickCoords.x, 2) +
-        Math.pow(coords.y - this.lastClickCoords.y, 2)
+        Math.pow(coords.y - this.lastClickCoords.y, 2),
     );
 
     if (
@@ -234,13 +257,42 @@ export class InputService {
     }, this.scrollDebounceMs);
   }
 
-  private emitScrollEnd(): void {
+  private emitScrollEnd() {
     if (this.isScrolling) {
       const action = this.createBaseAction("scroll_end", this.lastScrollCoords);
       this.emitAction(action);
       this.isScrolling = false;
     }
     this.scrollTimeout = null;
+  }
+  private handleMouseMoved(event: EventData): void {
+    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    this.lastMoveCoords = coords;
+
+    // If not currently moving, emit mouseover_start
+    if (!this.isMoving) {
+      this.isMoving = true;
+      const action = this.createBaseAction("mouseover_start", coords);
+      this.emitAction(action);
+    }
+
+    // Clear existing timeout and set a new one
+    if (this.moveTimeout) {
+      clearTimeout(this.moveTimeout);
+    }
+
+    this.moveTimeout = setTimeout(() => {
+      this.emitMoveEnd();
+    }, this.moveDebounceMs);
+  }
+
+  private emitMoveEnd() {
+    if (this.isMoving) {
+      const action = this.createBaseAction("mouseover_end", this.lastMoveCoords);
+      this.emitAction(action);
+      this.isMoving = false;
+    }
+    this.moveTimeout = null;
   }
 }
 

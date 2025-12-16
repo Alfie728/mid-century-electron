@@ -172,6 +172,10 @@ Use `iohook-macos` permission helpers in the main process (`checkAccessibilityPe
 
 | `scrollWheel` | `scroll_start` | Debounce; emit `scroll_end` after 150ms idle |
 
+| `mouseMoved` | `mouseover_start` | Emit on first move, include coords |
+
+| `mouseMoved` | `mouseover_end` | Debounce; emit after 350ms idle |
+
 Drag detection (future): Track `mousedown` -> `mousemove` -> `mouseup` sequences.
 
 ## macOS Native Hook Notes
