@@ -1,5 +1,6 @@
 import { Action, ActionType } from "./types";
 import type { EventData, MacOSEventHook } from "iohook-macos";
+import iohookMacos from "iohook-macos";
 
 type ActionCallback = (action: Action) => void;
 
@@ -41,8 +42,7 @@ export class InputService {
       throw new Error("Global input capture is only supported on macOS.");
     }
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      this.iohook = require("iohook-macos") as MacOSEventHook;
+      this.iohook = iohookMacos;
       return this.iohook;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
