@@ -174,9 +174,13 @@ Use `iohook-macos` permission helpers in the main process (`checkAccessibilityPe
 
 | `mouseMoved` | `mouseover_start` | Emit on first move, include coords |
 
-| `mouseMoved` | `mouseover_end` | Debounce; emit after 350ms idle |
+| `mouseMoved` | `mouseover_end` | Debounce; emit after 350ms idle (suppressed while dragging) |
 
-Drag detection (future): Track `mousedown` -> `mousemove` -> `mouseup` sequences.
+| `leftMouseDragged` | `drag_start` | Emit once per drag (left button) |
+
+| `leftMouseUp` | `drag_end` | Emit if a drag was active |
+
+Note: While dragging, `mouseMoved` events are ignored so `mouseover_*` actions don’t overlap `drag_*`.
 
 ## macOS Native Hook Notes
 

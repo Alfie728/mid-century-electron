@@ -62,7 +62,8 @@ Electron's process model replaces the Chrome extension's service worker and offs
   - Clicks: `leftMouseDown/rightMouseDown/otherMouseDown` → `click`
   - Keys: `keyDown` → `keypress`
   - Scroll: `scrollWheel` → `scroll_start` / `scroll_end` (debounced)
-  - Hover-ish movement: `mouseMoved` → `mouseover_start` / `mouseover_end` (debounced)
+  - Hover-ish movement: `mouseMoved` → `mouseover_start` / `mouseover_end` (debounced, suppressed while dragging)
+  - Drag: `leftMouseDragged` → `drag_start`, `leftMouseUp` → `drag_end`
 
 ### 2.6 macOS Permissions
 
@@ -320,7 +321,7 @@ type UploadJob = {
 - [x] Event normalization into Action objects
 - [x] Scroll start/end detection with debounce
 - [x] Mouseover start/end detection with debounce
-- [ ] Drag start/end detection
+- [x] Drag start/end detection (left button)
 - [ ] Input/change event markers
 - [ ] IPC forwarding to renderer
 

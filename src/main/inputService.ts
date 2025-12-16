@@ -30,6 +30,12 @@ export class InputService {
   private clickThresholdMs = 500;
   private clickDistanceThreshold = 10;
 
+  // Drag tracking (left mouse button)
+  private isLeftButtonDown = false;
+  private isDragging = false;
+  private dragStartCoords: { x: number; y: number } = { x: 0, y: 0 };
+  private lastDragCoords: { x: number; y: number } = { x: 0, y: 0 };
+
   // mouse movement tracking
   private moveTimeout: NodeJS.Timeout | null = null;
   private isMoving = false;
@@ -79,6 +85,8 @@ export class InputService {
 
     // Register event handlers (iohook-macos)
     iohook.on("leftMouseDown", this.handleLeftMouseDown);
+    iohook.on("leftMouseUp", this.handleLeftMouseUp);
+    iohook.on("leftMouseDragged", this.handleLeftMouseDragged);
     iohook.on("rightMouseDown", this.handleRightMouseDown);
     iohook.on("otherMouseDown", this.handleOtherMouseDown);
     iohook.on("keyDown", this.handleKeyDown);
@@ -124,6 +132,8 @@ export class InputService {
 
     // Remove event handlers
     iohook?.removeListener("leftMouseDown", this.handleLeftMouseDown);
+    iohook?.removeListener("leftMouseUp", this.handleLeftMouseUp);
+    iohook?.removeListener("leftMouseDragged", this.handleLeftMouseDragged);
     iohook?.removeListener("rightMouseDown", this.handleRightMouseDown);
     iohook?.removeListener("otherMouseDown", this.handleOtherMouseDown);
     iohook?.removeListener("keyDown", this.handleKeyDown);
@@ -135,6 +145,8 @@ export class InputService {
 
     this.isRunning = false;
     this.callback = null;
+    this.isLeftButtonDown = false;
+    this.isDragging = false;
     console.log("InputService stopped");
   }
 
@@ -160,7 +172,49 @@ export class InputService {
   }
 
   private handleLeftMouseDown = (event: EventData) => {
+    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    this.isLeftButtonDown = true;
+    this.isDragging = false;
+    this.dragStartCoords = coords;
+    this.lastDragCoords = coords;
     this.handleMouseDown(1, event);
+  };
+
+  private handleLeftMouseUp = (event: EventData) => {
+    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+
+    if (this.isDragging) {
+      const action = this.createBaseAction("drag_end", coords);
+      action.pointerMeta = { button: 1, clickCount: this.clickCount };
+      this.emitAction(action);
+    }
+
+    this.isLeftButtonDown = false;
+    this.isDragging = false;
+    this.lastDragCoords = coords;
+  };
+
+  private handleLeftMouseDragged = (event: EventData) => {
+    if (!this.isLeftButtonDown) return;
+    const coords = { x: event.x ?? 0, y: event.y ?? 0 };
+    this.lastDragCoords = coords;
+
+    if (!this.isDragging) {
+      this.isDragging = true;
+
+      // End any active "mouseover" session once a drag begins
+      if (this.moveTimeout) {
+        clearTimeout(this.moveTimeout);
+        this.moveTimeout = null;
+      }
+      if (this.isMoving) {
+        this.emitMoveEnd();
+      }
+
+      const action = this.createBaseAction("drag_start", this.dragStartCoords);
+      action.pointerMeta = { button: 1, clickCount: this.clickCount };
+      this.emitAction(action);
+    }
   };
 
   private handleRightMouseDown = (event: EventData) => {
@@ -254,6 +308,9 @@ export class InputService {
   }
 
   private handleMouseMoved = (event: EventData) => {
+    // Only record mouseover movement when not dragging.
+    if (this.isLeftButtonDown || this.isDragging) return;
+
     const coords = { x: event.x ?? 0, y: event.y ?? 0 };
     this.lastMoveCoords = coords;
 
