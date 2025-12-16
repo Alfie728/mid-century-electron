@@ -10,7 +10,7 @@ Electron's process model replaces the Chrome extension's service worker and offs
 
 - **Preload Scripts**: Secure bridge exposing a typed API from main to renderer via `contextBridge`. When `contextIsolation` is enabled, preload is the only safe channel between processes.
 
-- **Global Input Service** (in Main Process): Captures clicks/scrolls/keys/drags system-wide using native modules (iohook or @nut-tree/nut-js), normalizes raw events into high-level Action objects with timestamps and coordinates.
+- **Global Input Service** (in Main Process): Captures clicks/scrolls/keys/hover system-wide using `iohook-macos`, normalizes raw events into high-level Action objects with timestamps and coordinates, and forwards them to the renderer via IPC.
 
 - **Screenshot Service** (in Renderer): Given `MediaStream`, `ActionId`, and phase (before/during/after), grabs frames from a warmed `<video>` element and produces `ScreenshotArtifact` with dual timestamps (wall-clock + stream).
 
@@ -54,15 +54,20 @@ Electron's process model replaces the Chrome extension's service worker and offs
 ### 2.5 Global Input Capture
 
 - Use native Node modules in main process:
-  - **iohook-macos**: Global mouse/keyboard hooks on macOS
+  - **iohook-macos**: Global mouse/keyboard hooks on macOS (native module; must be rebuilt against the Electron version via `electron-rebuild`)
   - **@nut-tree/nut-js**: Alternative with broader platform support
 - Raw events are normalized into Action objects and forwarded to renderer via IPC.
 - Filter sensitive contexts where possible (though system-wide capture has limited context).
+- Event coverage implemented:
+  - Clicks: `leftMouseDown/rightMouseDown/otherMouseDown` → `click`
+  - Keys: `keyDown` → `keypress`
+  - Scroll: `scrollWheel` → `scroll_start` / `scroll_end` (debounced)
+  - Hover-ish movement: `mouseMoved` → `mouseover_start` / `mouseover_end` (debounced)
 
 ### 2.6 macOS Permissions
 
 - **Screen Recording**: Required for `desktopCapturer`. Prompt user if `systemPreferences.getMediaAccessStatus("screen")` is not granted.
-- **Accessibility**: Required for global input capture. Check via `systemPreferences.isTrustedAccessibilityClient(true)`.
+- **Accessibility**: Required for global input capture. Use `iohook-macos` helpers: `checkAccessibilityPermissions()` and `requestAccessibilityPermissions()`.
 - Show clear instructions in UI when permissions are missing.
 
 ### 2.7 Upload Coordination
@@ -310,12 +315,12 @@ type UploadJob = {
 
 ### Global Input Capture (Pending)
 
-- [ ] Evaluate and install native module (iohook or @nut-tree/nut-js)
-- [ ] Basic event listeners in main process (click, keypress, scroll)
-- [ ] Event normalization into Action objects
-- [ ] Scroll start/end detection with debounce
+- [x] Install `iohook-macos` and add `npm run rebuild` for Electron ABI
+- [x] Basic event listeners in main process (click, keypress, scroll, mouseMoved)
+- [x] Event normalization into Action objects
+- [x] Scroll start/end detection with debounce
+- [x] Mouseover start/end detection with debounce
 - [ ] Drag start/end detection
-- [ ] Hover enter/leave tracking (if feasible)
 - [ ] Input/change event markers
 - [ ] IPC forwarding to renderer
 
@@ -378,7 +383,7 @@ type UploadJob = {
 ### Permissions (Pending)
 
 - [ ] Screen recording permission check (`systemPreferences.getMediaAccessStatus`)
-- [ ] Accessibility permission check (`systemPreferences.isTrustedAccessibilityClient`)
+- [x] Accessibility permission check (`iohook-macos.checkAccessibilityPermissions`)
 - [ ] Permission prompt UI with instructions
 - [ ] Graceful degradation when permissions denied
 
@@ -416,7 +421,7 @@ Every action carries:
 
 ### Current State
 
-Only basic recording is implemented. No action capture yet.
+Basic action capture is implemented in the main process (click, keypress, scroll start/end, mouseover start/end) and forwarded to the renderer via IPC.
 
 ### Planned Implementation
 
