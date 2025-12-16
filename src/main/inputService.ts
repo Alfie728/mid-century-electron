@@ -35,16 +35,7 @@ export class InputService {
   private lastMoveCoords: { x: number; y: number } = { x: 0, y: 0 };
   private moveDebounceMs = 350;
 
-  constructor() {
-    this.handleKeyDown = this.handleKeyDown.bind(this);
-    this.handleMouseWheel = this.handleMouseWheel.bind(this);
-    this.handleMouseMoved = this.handleMouseMoved.bind(this);
-    this.handleLeftMouseDown = this.handleLeftMouseDown.bind(this);
-    this.handleRightMouseDown = this.handleRightMouseDown.bind(this);
-    this.handleOtherMouseDown = this.handleOtherMouseDown.bind(this);
-  }
-
-  private getIohook(): MacOSEventHook {
+  private getIohook() {
     if (this.iohook) return this.iohook;
     if (process.platform !== "darwin") {
       throw new Error("Global input capture is only supported on macOS.");
@@ -68,11 +59,7 @@ export class InputService {
     }
   }
 
-  start(
-    sessionId: string,
-    sessionStartTime: number,
-    callback: ActionCallback,
-  ): Promise<void> {
+  start(sessionId: string, sessionStartTime: number, callback: ActionCallback) {
     if (this.isRunning) {
       console.warn("InputService is already running");
       return Promise.resolve();
@@ -107,7 +94,7 @@ export class InputService {
     return Promise.resolve();
   }
 
-  stop(): void {
+  stop() {
     if (!this.isRunning) {
       return;
     }
@@ -151,7 +138,7 @@ export class InputService {
     console.log("InputService stopped");
   }
 
-  private emitAction(action: Action): void {
+  private emitAction(action: Action) {
     if (this.callback) {
       this.callback(action);
     }
@@ -172,19 +159,19 @@ export class InputService {
     };
   }
 
-  private handleLeftMouseDown(event: EventData): void {
+  private handleLeftMouseDown = (event: EventData) => {
     this.handleMouseDown(1, event);
-  }
+  };
 
-  private handleRightMouseDown(event: EventData): void {
+  private handleRightMouseDown = (event: EventData) => {
     this.handleMouseDown(2, event);
-  }
+  };
 
-  private handleOtherMouseDown(event: EventData): void {
+  private handleOtherMouseDown = (event: EventData) => {
     this.handleMouseDown(3, event);
-  }
+  };
 
-  private handleMouseDown(button: number, event: EventData): void {
+  private handleMouseDown(button: number, event: EventData) {
     const now = Date.now();
     const coords = { x: event.x ?? 0, y: event.y ?? 0 };
 
@@ -216,7 +203,7 @@ export class InputService {
     this.emitAction(action);
   }
 
-  private handleKeyDown(event: EventData): void {
+  private handleKeyDown = (event: EventData) => {
     // Use (0,0) for keyboard events - no specific coords
     const action = this.createBaseAction("keypress", { x: 0, y: 0 });
     const keyCode = event.keyCode ?? -1;
@@ -234,9 +221,9 @@ export class InputService {
     };
 
     this.emitAction(action);
-  }
+  };
 
-  private handleMouseWheel(event: EventData): void {
+  private handleMouseWheel = (event: EventData) => {
     const coords = { x: event.x ?? 0, y: event.y ?? 0 };
     this.lastScrollCoords = coords;
 
@@ -255,7 +242,7 @@ export class InputService {
     this.scrollTimeout = setTimeout(() => {
       this.emitScrollEnd();
     }, this.scrollDebounceMs);
-  }
+  };
 
   private emitScrollEnd() {
     if (this.isScrolling) {
@@ -265,7 +252,8 @@ export class InputService {
     }
     this.scrollTimeout = null;
   }
-  private handleMouseMoved(event: EventData): void {
+
+  private handleMouseMoved = (event: EventData) => {
     const coords = { x: event.x ?? 0, y: event.y ?? 0 };
     this.lastMoveCoords = coords;
 
@@ -284,11 +272,14 @@ export class InputService {
     this.moveTimeout = setTimeout(() => {
       this.emitMoveEnd();
     }, this.moveDebounceMs);
-  }
+  };
 
   private emitMoveEnd() {
     if (this.isMoving) {
-      const action = this.createBaseAction("mouseover_end", this.lastMoveCoords);
+      const action = this.createBaseAction(
+        "mouseover_end",
+        this.lastMoveCoords,
+      );
       this.emitAction(action);
       this.isMoving = false;
     }
