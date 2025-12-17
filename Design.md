@@ -325,7 +325,6 @@ type UploadJob = {
 - [x] Scroll (`scroll_start` / `scroll_end`) with debounce
 - [x] Drag (`drag_start` / `drag_end`) using `leftMouseDragged` + `leftMouseUp`
 - [x] Mouseover-ish movement (`mouseover_start` / `mouseover_end`) with debounce (suppressed while dragging)
-- [ ] Text input markers (`input`) with PII filtering
 
 ### Action Enrichment (Pending)
 
