@@ -8,6 +8,10 @@
 // - getSources: Get available screen/window sources for capture
 // - showSaveDialog: Show native save dialog
 // - getOperatingSystem: Get current OS platform
+// - persistScreenshot: Persist screenshot bytes to disk (main process writer)
+// - persistVideo: Persist recorded video bytes to disk (main process writer)
+// - showSaveExportDialog: Show native save dialog for zip export
+// - exportSessionBundle: Create a zip bundle from session artifacts
 // - startInputCapture: Start global input capture (sessionId, sessionStartTime)
 // - stopInputCapture: Stop global input capture
 // - checkAccessibilityPermission: Check if accessibility permission is granted (macOS)

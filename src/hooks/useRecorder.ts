@@ -1,5 +1,3 @@
-import { ipcRenderer } from "electron";
-import { writeFile } from "fs";
 import { useRef, useState } from "react";
 
 type StreamGetter = () => MediaStream | null;
@@ -8,6 +6,7 @@ export function useRecorder(getStream: StreamGetter) {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
+  const stopResolveRef = useRef<((blob: Blob | null) => void) | null>(null);
 
   const startRecording = () => {
     if (isRecording) return;
@@ -23,31 +22,33 @@ export function useRecorder(getStream: StreamGetter) {
     mediaRecorder.ondataavailable = (event: BlobEvent) => {
       recordedChunksRef.current.push(event.data);
     };
-    mediaRecorder.onstop = async () => {
-      await saveRecording();
+    mediaRecorder.onstop = () => {
+      const blob =
+        recordedChunksRef.current.length > 0
+          ? new Blob(recordedChunksRef.current, {
+              type: mediaRecorder.mimeType || "video/webm",
+            })
+          : null;
+      recordedChunksRef.current = [];
+      stopResolveRef.current?.(blob);
+      stopResolveRef.current = null;
     };
 
     mediaRecorder.start();
     setIsRecording(true);
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (!mediaRecorderRef.current || !isRecording) return;
-    mediaRecorderRef.current.stop();
-    setIsRecording(false);
-  };
+    const recorder = mediaRecorderRef.current;
 
-  const saveRecording = async () => {
-    const blob = new Blob(recordedChunksRef.current, {
-      type: "video/webm; codecs=vp9",
+    const blob = await new Promise<Blob | null>((resolve) => {
+      stopResolveRef.current = resolve;
+      recorder.stop();
     });
-    recordedChunksRef.current = [];
 
-    const buffer = Buffer.from(await blob.arrayBuffer());
-    const { canceled, filePath } = await ipcRenderer.invoke("showSaveDialog");
-    if (canceled || !filePath) return;
-
-    writeFile(filePath, buffer, () => console.log("video saved successfully!"));
+    setIsRecording(false);
+    return blob;
   };
 
   return {

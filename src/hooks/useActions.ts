@@ -2,6 +2,10 @@ import { ipcRenderer, IpcRendererEvent } from "electron";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Action } from "../main/types";
 
+type UseActionsOptions = {
+  onAction?: (action: Action) => void;
+};
+
 type UseActionsReturn = {
   actions: Action[];
   isCapturing: boolean;
@@ -9,13 +13,15 @@ type UseActionsReturn = {
   startCapture: (sessionId: string) => Promise<void>;
   stopCapture: () => Promise<void>;
   clearActions: () => void;
+  updateAction: (actionId: string, patch: Partial<Action>) => void;
+  getSessionStartTimeMs: () => number;
   checkAccessibilityPermission: () => Promise<{
     granted: boolean;
     platform: string;
   }>;
 };
 
-export function useActions(): UseActionsReturn {
+export function useActions(options?: UseActionsOptions): UseActionsReturn {
   const [actions, setActions] = useState<Action[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -25,6 +31,7 @@ export function useActions(): UseActionsReturn {
   useEffect(() => {
     const handleAction = (_event: IpcRendererEvent, action: Action) => {
       setActions((prev) => [...prev, action]);
+      options?.onAction?.(action);
     };
 
     ipcRenderer.on("action", handleAction);
@@ -32,7 +39,7 @@ export function useActions(): UseActionsReturn {
     return () => {
       ipcRenderer.removeListener("action", handleAction);
     };
-  }, []);
+  }, [options?.onAction]);
 
   const startCapture = useCallback(
     async (sessionId: string) => {
@@ -73,6 +80,14 @@ export function useActions(): UseActionsReturn {
     setActions([]);
   }, []);
 
+  const updateAction = useCallback((actionId: string, patch: Partial<Action>) => {
+    setActions((prev) =>
+      prev.map((action) => (action.actionId === actionId ? { ...action, ...patch } : action)),
+    );
+  }, []);
+
+  const getSessionStartTimeMs = useCallback(() => sessionStartTimeRef.current, []);
+
   const checkAccessibilityPermission = useCallback(async () => {
     const result = await ipcRenderer.invoke("checkAccessibilityPermission");
     return result as { granted: boolean; platform: string };
@@ -85,6 +100,8 @@ export function useActions(): UseActionsReturn {
     startCapture,
     stopCapture,
     clearActions,
+    updateAction,
+    getSessionStartTimeMs,
     checkAccessibilityPermission,
   };
 }
