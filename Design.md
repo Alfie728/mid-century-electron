@@ -314,26 +314,23 @@ type UploadJob = {
 - [ ] Disk persistence in session directory
 - [ ] Optional redaction/blur hooks
 
-### Global Input Capture (Pending)
+### Global Input & Actions (In Progress)
 
 - [x] Install `iohook-macos` and add `npm run rebuild` for Electron ABI
-- [x] Basic event listeners in main process (click, keypress, scroll, mouseMoved)
-- [x] Event normalization into Action objects
-- [x] Scroll start/end detection with debounce
-- [x] Mouseover start/end detection with debounce
-- [x] Drag start/end detection (left button)
-- [ ] Input/change event markers
-- [ ] IPC forwarding to renderer
+- [x] Check/request Accessibility permission via `iohook-macos`
+- [x] Capture and normalize events into `Action` objects with `relativeTimeMs`
+- [x] Forward actions from main → renderer via IPC
+- [x] Clicks (`click`) with `pointerMeta.button` + `clickCount`
+- [x] Keys (`keypress`) with human-readable `key` / DOM-style `code` + modifiers
+- [x] Scroll (`scroll_start` / `scroll_end`) with debounce
+- [x] Drag (`drag_start` / `drag_end`) using `leftMouseDragged` + `leftMouseUp`
+- [x] Mouseover-ish movement (`mouseover_start` / `mouseover_end`) with debounce (suppressed while dragging)
+- [ ] Text input markers (`input`) with PII filtering
 
-### Action System (Pending)
+### Action Enrichment (Pending)
 
-- [ ] Session-level clock baseline for `relativeTimeMs`
-- [ ] Full ActionType coverage (click, scroll, drag, keypress, hover, input)
-- [ ] Pointer metadata (button, clickCount, viewport coords)
-- [ ] Key metadata (key, code, modifiers, keyCodes[] for chords)
-- [ ] Input value capture with PII filtering
-- [ ] Per-action screenshot refs
-- [ ] Timing alignment between actions, screenshots, and video chunks
+- [ ] Per-action screenshot refs (before/during/after)
+- [ ] Timing alignment between actions, screenshots, and video (`streamTimestamp`)
 
 ### Session Management (Pending)
 
@@ -367,7 +364,7 @@ type UploadJob = {
 - [x] Video preview
 - [ ] Pause control
 - [ ] Recording indicator (tray icon or overlay)
-- [ ] Permission status display and guidance
+- [x] Accessibility permission status display and guidance
 - [ ] Storage usage display
 - [ ] Error toasts (permission denied, stream ended, quota exceeded)
 - [ ] Session list / history view
@@ -386,7 +383,7 @@ type UploadJob = {
 - [ ] Screen recording permission check (`systemPreferences.getMediaAccessStatus`)
 - [x] Accessibility permission check (`iohook-macos.checkAccessibilityPermissions`)
 - [ ] Permission prompt UI with instructions
-- [ ] Graceful degradation when permissions denied
+- [x] Graceful degradation when permissions denied (show error, skip capture)
 
 ### Resilience (Pending)
 
@@ -422,24 +419,12 @@ Every action carries:
 
 ### Current State
 
-Basic action capture is implemented in the main process (click, keypress, scroll start/end, mouseover start/end) and forwarded to the renderer via IPC.
+Basic action capture is implemented in the main process (click, keypress, scroll start/end, drag start/end, mouseover start/end) and forwarded to the renderer via IPC.
 
 ### Planned Implementation
 
-1. Add a session-level clock baseline so all actions include `relativeTimeMs` and reuse that zero-point for screenshot sequencing.
+1. Add text input markers (`input`) with PII filtering (skip password fields, email, tel, CC patterns).
 
-2. Implement global input listener with full ActionType coverage:
-   - `click` (with button, clickCount, coords)
-   - `scroll_start` / `scroll_end` (debounced)
-   - `drag_start` / `drag_end`
-   - `keypress` (with key, code, modifiers, keyCodes[])
-   - `mouseover_start` / `mouseover_end` (if feasible with system-wide capture)
-   - `input` (typed text with PII filtering)
+2. Attach `screenshotRef` per action (prefer the "during" frame) and align filenames/IDs to relative timestamps.
 
-3. Capture pointer data as top-level coords normalized to screen.
-
-4. Capture input values with PII filtering (skip password fields, email, tel, CC patterns).
-
-5. Attach `screenshotRef` per action (prefer the "during" frame) and align filenames/IDs to relative timestamps.
-
-6. Forward all actions from main to renderer via IPC for screenshot capture coordination.
+3. Add `streamTimestamp` alignment so actions can be correlated precisely with screenshots and video chunks.
