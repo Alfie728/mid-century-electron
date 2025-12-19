@@ -105,3 +105,4 @@ export function useActions(options?: UseActionsOptions): UseActionsReturn {
     checkAccessibilityPermission,
   };
 }
+
