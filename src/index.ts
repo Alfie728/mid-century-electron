@@ -1,4 +1,11 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain } from "electron";
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  ipcMain,
+  screen,
+} from "electron";
 import { inputService } from "./main/inputService";
 import iohookMacos from "iohook-macos";
 import { Action } from "./main/types";
@@ -12,20 +19,32 @@ import { spawn } from "child_process";
 // whether you're running in development or production).
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+declare const TOOLBAR_WINDOW_WEBPACK_ENTRY: string;
+declare const TOOLBAR_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
   app.quit();
 }
 
-// Store main window reference for IPC
+// Store window references for IPC
 let mainWindow: BrowserWindow | null = null;
+let toolbarWindow: BrowserWindow | null = null;
 
-const createWindow = (): void => {
-  // Create the browser window.
+// Toolbar dimensions
+const TOOLBAR_WIDTH = 320;
+const TOOLBAR_HEIGHT = 48; // Height for just the control buttons
+const TOOLBAR_MARGIN_BOTTOM = 24;
+// Per row of previews (16:9 thumbnail ~80px + label ~16px + gap)
+const PICKER_ROW_HEIGHT = 100;
+const PICKER_PADDING = 24; // padding around picker
+
+const createMainWindow = (): void => {
+  // Create the browser window - hidden by default, shown during recording
   mainWindow = new BrowserWindow({
     height: 600,
     width: 800,
+    show: false, // Hidden by default
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       nodeIntegration: true,
@@ -36,19 +55,126 @@ const createWindow = (): void => {
   // and load the index.html of the app.
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Open the DevTools only in development
+  // mainWindow.webContents.openDevTools();
 
   // Clean up reference when window is closed
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // Close toolbar when main window closes
+    if (toolbarWindow && !toolbarWindow.isDestroyed()) {
+      toolbarWindow.close();
+    }
   });
 };
+
+const createToolbarWindow = (): void => {
+  // Get primary display dimensions
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } =
+    primaryDisplay.workAreaSize;
+
+  // Calculate position: bottom center of screen
+  const x = Math.round((screenWidth - TOOLBAR_WIDTH) / 2);
+  const y = screenHeight - TOOLBAR_HEIGHT - TOOLBAR_MARGIN_BOTTOM;
+
+  toolbarWindow = new BrowserWindow({
+    width: TOOLBAR_WIDTH,
+    height: TOOLBAR_HEIGHT,
+    x,
+    y,
+    frame: false,
+    transparent: false,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: true,
+    focusable: true,
+    roundedCorners: true,
+    // macOS native blur effect
+    vibrancy: "popover",
+    visualEffectState: "active",
+    webPreferences: {
+      preload: TOOLBAR_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  toolbarWindow.loadURL(TOOLBAR_WINDOW_WEBPACK_ENTRY);
+
+  // macOS: Set window level to floating and visible on all workspaces
+  if (process.platform === "darwin") {
+    toolbarWindow.setAlwaysOnTop(true, "floating");
+    toolbarWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
+  }
+
+  toolbarWindow.on("closed", () => {
+    toolbarWindow = null;
+  });
+};
+
+// Track picker state
+let isPickerOpen = false;
+let sourceCount = 0;
+
+// Helper to calculate picker height based on source count
+function calculatePickerHeight(numSources: number): number {
+  const rows = Math.ceil(numSources / 2);
+  return TOOLBAR_HEIGHT + PICKER_PADDING + rows * PICKER_ROW_HEIGHT;
+}
+
+// Helper to update toolbar size based on state
+function updateToolbarSize(
+  options: {
+    isRecording?: boolean;
+    pickerOpen?: boolean;
+    numSources?: number;
+  } = {}
+) {
+  if (!toolbarWindow || toolbarWindow.isDestroyed()) return;
+
+  const { isRecording = false, pickerOpen = isPickerOpen } = options;
+
+  // Update global state if provided
+  if (options.pickerOpen !== undefined) {
+    isPickerOpen = options.pickerOpen;
+  }
+  if (options.numSources !== undefined) {
+    sourceCount = options.numSources;
+  }
+
+  const newWidth = isRecording ? 200 : TOOLBAR_WIDTH;
+  const newHeight =
+    pickerOpen && !isRecording
+      ? calculatePickerHeight(sourceCount)
+      : TOOLBAR_HEIGHT;
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } =
+    primaryDisplay.workAreaSize;
+  const x = Math.round((screenWidth - newWidth) / 2);
+  const y = screenHeight - newHeight - TOOLBAR_MARGIN_BOTTOM;
+
+  toolbarWindow.setBounds({ x, y, width: newWidth, height: newHeight });
+}
+
+// Helper to broadcast state to toolbar
+function broadcastToToolbar(channel: string, payload: unknown) {
+  if (toolbarWindow && !toolbarWindow.isDestroyed()) {
+    toolbarWindow.webContents.send(channel, payload);
+  }
+}
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on("ready", createWindow);
+app.on("ready", () => {
+  createMainWindow();
+  createToolbarWindow();
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
@@ -63,14 +189,94 @@ app.on("activate", () => {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    createMainWindow();
+    createToolbarWindow();
   }
 });
+
+// ============================================
+// Toolbar <-> Main Window IPC Bridge
+// ============================================
+
+// Toolbar -> Main: Select a source
+ipcMain.on("toolbar:selectSource", (_event, sourceId: string) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("toolbar:selectSource", sourceId);
+  }
+});
+
+// Toolbar -> Main: Picker state changed (resize window)
+ipcMain.on(
+  "toolbar:pickerStateChanged",
+  (_event, pickerOpen: boolean, numSources: number) => {
+    updateToolbarSize({ pickerOpen, numSources });
+  }
+);
+
+// Toolbar -> Main: Start recording
+ipcMain.on("toolbar:start", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("toolbar:start");
+    mainWindow.show(); // Show main window when recording starts
+  }
+  updateToolbarSize({ isRecording: true, pickerOpen: false });
+  broadcastToToolbar("toolbar:stateUpdate", { state: "recording" });
+});
+
+// Toolbar -> Main: Stop recording
+ipcMain.on("toolbar:stop", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("toolbar:stop");
+    // Optional: hide main window after stopping
+    // mainWindow.hide();
+  }
+  updateToolbarSize({ isRecording: false });
+  broadcastToToolbar("toolbar:stateUpdate", { state: "idle" });
+});
+
+// Toolbar -> Main: Pause recording
+ipcMain.on("toolbar:pause", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("toolbar:pause");
+  }
+  broadcastToToolbar("toolbar:stateUpdate", { state: "paused" });
+});
+
+// Toolbar -> Main: Resume recording
+ipcMain.on("toolbar:resume", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("toolbar:resume");
+  }
+  broadcastToToolbar("toolbar:stateUpdate", { state: "recording" });
+});
+
+// Main -> Toolbar: State update (called from main window renderer)
+ipcMain.on(
+  "main:stateUpdate",
+  (
+    _event,
+    payload: {
+      state?: "idle" | "recording" | "paused";
+      selectedSourceId?: string;
+      sources?: Electron.DesktopCapturerSource[];
+    }
+  ) => {
+    broadcastToToolbar("toolbar:stateUpdate", payload);
+    if (payload.state === "recording") {
+      updateToolbarSize({ isRecording: true });
+    } else if (payload.state === "idle") {
+      updateToolbarSize({ isRecording: false });
+    }
+  }
+);
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
 ipcMain.handle("getSources", async () => {
-  return await desktopCapturer.getSources({ types: ["screen"] });
+  return await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize: { width: 320, height: 180 }, // 16:9 aspect ratio thumbnails
+  });
 });
 
 ipcMain.handle("showSaveDialog", async () => {
@@ -175,7 +381,7 @@ ipcMain.handle(
       filePath,
       mimeType,
     };
-  },
+  }
 );
 
 type ScreenshotExportMeta = {
@@ -221,9 +427,13 @@ function runZip(cwd: string, zipPath: string, args: string[]) {
 
 ipcMain.handle(
   "exportSessionBundle",
-  async (_event, payload: ExportSessionBundlePayload): Promise<{ zipPath: string }> => {
+  async (
+    _event,
+    payload: ExportSessionBundlePayload
+  ): Promise<{ zipPath: string }> => {
     const { sessionId, zipPath } = payload;
-    if (!sessionId) throw new Error("exportSessionBundle: sessionId is required");
+    if (!sessionId)
+      throw new Error("exportSessionBundle: sessionId is required");
     if (!zipPath) throw new Error("exportSessionBundle: zipPath is required");
 
     const sessionSegment = safePathSegment(sessionId);
@@ -239,12 +449,15 @@ ipcMain.handle(
 
     await runZip(sessionDir, zipPath, ["actions.json", "video", "screenshots"]);
     return { zipPath };
-  },
+  }
 );
 
 ipcMain.handle(
   "persistScreenshot",
-  async (_event, payload: PersistScreenshotPayload): Promise<PersistScreenshotResult> => {
+  async (
+    _event,
+    payload: PersistScreenshotPayload
+  ): Promise<PersistScreenshotResult> => {
     const {
       sessionId,
       actionId,
@@ -266,13 +479,21 @@ ipcMain.handle(
     const sortKey =
       typeof relativeTimeMs === "number" && Number.isFinite(relativeTimeMs)
         ? String(Math.max(0, Math.floor(relativeTimeMs))).padStart(10, "0")
-        : String(Math.max(0, Math.floor(wallClockCapturedAt))).padStart(13, "0");
+        : String(Math.max(0, Math.floor(wallClockCapturedAt))).padStart(
+            13,
+            "0"
+          );
 
     const filename = `${sortKey}_${actionSegment}_${phase}.${ext}`;
     const screenshotId = `${actionSegment}-${phase}-${wallClockCapturedAt}`;
 
     const baseDir = app.getPath("userData");
-    const screenshotDir = path.join(baseDir, "sessions", sessionSegment, "screenshots");
+    const screenshotDir = path.join(
+      baseDir,
+      "sessions",
+      sessionSegment,
+      "screenshots"
+    );
     const filePath = path.join(screenshotDir, filename);
 
     const data = new Uint8Array(bytes);
@@ -283,7 +504,7 @@ ipcMain.handle(
       screenshotRef: `screenshots/${filename}`,
       filePath,
     };
-  },
+  }
 );
 
 // Input capture IPC handlers
@@ -299,7 +520,7 @@ ipcMain.handle(
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send("action", action);
           }
-        },
+        }
       );
       return { success: true as const };
     } catch (error) {
@@ -307,7 +528,7 @@ ipcMain.handle(
       console.error("Failed to start input capture:", message);
       return { success: false as const, error: message };
     }
-  },
+  }
 );
 
 ipcMain.handle("stopInputCapture", () => {

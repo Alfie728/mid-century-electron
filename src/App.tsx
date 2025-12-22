@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ipcRenderer } from "electron";
 import { useDesktopSources } from "./hooks/useDesktopSources";
 import { useDesktopPreview } from "./hooks/useDesktopPreview";
 import { useRecorder } from "./hooks/useRecorder";
 import { useActions } from "./hooks/useActions";
-import { SourceSelect } from "./components/SourceSelect";
-import { RecorderControls } from "./components/RecorderControls";
 import { createScreenshotService, ScreenshotService } from "./renderer/screenshotService";
 import { persistScreenshot } from "./renderer/persistScreenshot";
 import { persistVideo } from "./renderer/persistVideo";
@@ -163,6 +162,15 @@ export default function App() {
     });
   }, [checkAccessibilityPermission]);
 
+  // Broadcast state updates to toolbar
+  useEffect(() => {
+    ipcRenderer.send("main:stateUpdate", {
+      state: isRecording ? "recording" : "idle",
+      selectedSourceId,
+      sources: inputSources,
+    });
+  }, [isRecording, selectedSourceId, inputSources]);
+
   // Combined start handler
   const handleStart = useCallback(async () => {
     sessionIdRef.current = generateSessionId();
@@ -224,84 +232,113 @@ export default function App() {
     );
   }, [actions, getSessionStartTimeMs, stopCapture, stopRecording]);
 
+  // Listen for toolbar commands
+  useEffect(() => {
+    const handleSelectSource = (_event: Electron.IpcRendererEvent, sourceId: string) => {
+      previewSource(sourceId);
+    };
+
+    const handleToolbarStart = () => {
+      handleStart();
+    };
+
+    const handleToolbarStop = () => {
+      handleStop();
+    };
+
+    // TODO: Implement pause/resume in useRecorder hook
+    const handleToolbarPause = () => {
+      console.log("Pause not implemented yet");
+    };
+
+    const handleToolbarResume = () => {
+      console.log("Resume not implemented yet");
+    };
+
+    ipcRenderer.on("toolbar:selectSource", handleSelectSource);
+    ipcRenderer.on("toolbar:start", handleToolbarStart);
+    ipcRenderer.on("toolbar:stop", handleToolbarStop);
+    ipcRenderer.on("toolbar:pause", handleToolbarPause);
+    ipcRenderer.on("toolbar:resume", handleToolbarResume);
+
+    return () => {
+      ipcRenderer.removeListener("toolbar:selectSource", handleSelectSource);
+      ipcRenderer.removeListener("toolbar:start", handleToolbarStart);
+      ipcRenderer.removeListener("toolbar:stop", handleToolbarStop);
+      ipcRenderer.removeListener("toolbar:pause", handleToolbarPause);
+      ipcRenderer.removeListener("toolbar:resume", handleToolbarResume);
+    };
+  }, [handleStart, handleStop, previewSource]);
+
   return (
-    <div className="min-h-screen bg-linear-to-br from-base-200 via-base-100 to-base-200 text-base-content flex items-center justify-center px-6 py-10">
-      <div className="w-full">
-        <div className="card bg-base-100 shadow-2xl border border-base-200">
-          <div className="card-body gap-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold">Screen Recorder</h1>
-                <p className="text-sm text-base-content/70">
-                  Pick a screen to preview, then start recording when ready.
-                </p>
-              </div>
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white flex flex-col">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-white/10">
+        <h1 className="text-lg font-medium text-white/90">
+          {isRecording ? "Recording..." : "Preview"}
+        </h1>
+        <p className="text-sm text-white/50">
+          {isRecording
+            ? `Capturing ${actions.length} actions`
+            : selectedSourceId
+              ? "Ready to record"
+              : "Select a screen from the toolbar below"}
+        </p>
+      </div>
 
-            <div className="rounded-xl border border-base-300 bg-base-200/60 p-3">
-              <video
-                className="w-full aspect-video rounded-lg bg-black/60 object-contain shadow-inner"
-                ref={videoRef}
-              ></video>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-[auto,1fr] items-center">
-              <RecorderControls
-                isRecording={isRecording}
-                canRecord={Boolean(selectedSourceId)}
-                onStart={handleStart}
-                onStop={handleStop}
-              />
-
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-base-content/70">
-                  Choose a source
-                </label>
-                <SourceSelect
-                  sources={inputSources}
-                  selectedId={selectedSourceId}
-                  onChange={(id) => previewSource(id)}
-                />
-              </div>
-            </div>
-
-            {/* Action capture status */}
-            {isRecording && (
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isCapturing ? "bg-green-500 animate-pulse" : "bg-gray-400"
-                    }`}
-                  ></span>
-                  <span className="text-base-content/70">
-                    {isCapturing ? "Capturing input" : "Input capture stopped"}
-                  </span>
-                </div>
-                <div className="badge badge-primary">
-                  {actions.length} actions
-                </div>
-              </div>
-            )}
-
-            {/* Accessibility permission warning */}
-            {accessibilityGranted === false && (
-              <div className="alert alert-warning text-sm">
-                <span>
-                  Accessibility permission is required for global input capture
-                  on macOS. Please grant permission in System Preferences.
-                </span>
-              </div>
-            )}
-
-            {/* Input capture error */}
-            {(inputCaptureError || lastError) && (
-              <div className="alert alert-error text-sm">
-                <span>{inputCaptureError || lastError}</span>
-              </div>
-            )}
-          </div>
+      {/* Video Preview */}
+      <div className="flex-1 p-4">
+        <div className="h-full rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+          <video
+            className="w-full h-full object-contain"
+            ref={videoRef}
+          ></video>
         </div>
+      </div>
+
+      {/* Status Bar */}
+      <div className="px-6 py-3 border-t border-white/10 flex items-center gap-4 text-sm">
+        {/* Recording status */}
+        {isRecording && (
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isCapturing ? "bg-green-500 animate-pulse" : "bg-gray-400"
+              }`}
+            />
+            <span className="text-white/70">
+              {isCapturing ? "Capturing input" : "Input capture stopped"}
+            </span>
+          </div>
+        )}
+
+        {/* Accessibility permission warning */}
+        {accessibilityGranted === false && (
+          <div className="flex items-center gap-2 text-yellow-400">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span>Accessibility permission required</span>
+          </div>
+        )}
+
+        {/* Error */}
+        {(inputCaptureError || lastError) && (
+          <div className="flex items-center gap-2 text-red-400">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span>{inputCaptureError || lastError}</span>
+          </div>
+        )}
       </div>
     </div>
   );
