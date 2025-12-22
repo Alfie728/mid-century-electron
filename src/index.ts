@@ -217,7 +217,7 @@ ipcMain.on(
 ipcMain.on("toolbar:start", () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("toolbar:start");
-    mainWindow.show(); // Show main window when recording starts
+    // Keep main window hidden - recording controlled via toolbar
   }
   updateToolbarSize({ isRecording: true, pickerOpen: false });
   broadcastToToolbar("toolbar:stateUpdate", { state: "recording" });
