@@ -39,6 +39,15 @@ const config: ForgeConfig = {
             },
             nodeIntegration: true,
           },
+          {
+            html: "./src/toolbar.html",
+            js: "./src/toolbarRenderer.ts",
+            name: "toolbar_window",
+            preload: {
+              js: "./src/preload.ts",
+            },
+            nodeIntegration: true,
+          },
         ],
       },
     }),
