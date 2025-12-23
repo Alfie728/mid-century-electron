@@ -116,10 +116,6 @@ const createToolbarWindow = (): void => {
   });
 };
 
-// Track picker state
-let isPickerOpen = false;
-let sourceCount = 0;
-
 // Helper to calculate picker height based on source count
 function calculatePickerHeight(numSources: number): number {
   const rows = Math.ceil(numSources / 2);
@@ -132,23 +128,17 @@ function updateToolbarSize(
     isRecording?: boolean;
     pickerOpen?: boolean;
     numSources?: number;
-  } = {}
+  } = {},
 ) {
   if (!toolbarWindow || toolbarWindow.isDestroyed()) return;
 
-  const { isRecording = false, pickerOpen = isPickerOpen } = options;
-
-  // Update global state if provided
-  if (options.pickerOpen !== undefined) {
-    isPickerOpen = options.pickerOpen;
-  }
-  if (options.numSources !== undefined) {
-    sourceCount = options.numSources;
-  }
+  const isRecording = options.isRecording ?? false;
+  const isPickerOpen = options.pickerOpen ?? false;
+  const sourceCount = options.numSources ?? 0;
 
   const newWidth = isRecording ? 200 : TOOLBAR_WIDTH;
   const newHeight =
-    pickerOpen && !isRecording
+    isPickerOpen && !isRecording
       ? calculatePickerHeight(sourceCount)
       : TOOLBAR_HEIGHT;
 
@@ -210,7 +200,7 @@ ipcMain.on(
   "toolbar:pickerStateChanged",
   (_event, pickerOpen: boolean, numSources: number) => {
     updateToolbarSize({ pickerOpen, numSources });
-  }
+  },
 );
 
 // Toolbar -> Main: Start recording
@@ -259,7 +249,7 @@ ipcMain.on(
       state?: "idle" | "recording" | "paused";
       selectedSourceId?: string;
       sources?: Electron.DesktopCapturerSource[];
-    }
+    },
   ) => {
     broadcastToToolbar("toolbar:stateUpdate", payload);
     if (payload.state === "recording") {
@@ -267,7 +257,7 @@ ipcMain.on(
     } else if (payload.state === "idle") {
       updateToolbarSize({ isRecording: false });
     }
-  }
+  },
 );
 
 // In this file you can include the rest of your app's specific main process
@@ -381,7 +371,7 @@ ipcMain.handle(
       filePath,
       mimeType,
     };
-  }
+  },
 );
 
 type ScreenshotExportMeta = {
@@ -429,7 +419,7 @@ ipcMain.handle(
   "exportSessionBundle",
   async (
     _event,
-    payload: ExportSessionBundlePayload
+    payload: ExportSessionBundlePayload,
   ): Promise<{ zipPath: string }> => {
     const { sessionId, zipPath } = payload;
     if (!sessionId)
@@ -449,14 +439,14 @@ ipcMain.handle(
 
     await runZip(sessionDir, zipPath, ["actions.json", "video", "screenshots"]);
     return { zipPath };
-  }
+  },
 );
 
 ipcMain.handle(
   "persistScreenshot",
   async (
     _event,
-    payload: PersistScreenshotPayload
+    payload: PersistScreenshotPayload,
   ): Promise<PersistScreenshotResult> => {
     const {
       sessionId,
@@ -481,7 +471,7 @@ ipcMain.handle(
         ? String(Math.max(0, Math.floor(relativeTimeMs))).padStart(10, "0")
         : String(Math.max(0, Math.floor(wallClockCapturedAt))).padStart(
             13,
-            "0"
+            "0",
           );
 
     const filename = `${sortKey}_${actionSegment}_${phase}.${ext}`;
@@ -492,7 +482,7 @@ ipcMain.handle(
       baseDir,
       "sessions",
       sessionSegment,
-      "screenshots"
+      "screenshots",
     );
     const filePath = path.join(screenshotDir, filename);
 
@@ -504,7 +494,7 @@ ipcMain.handle(
       screenshotRef: `screenshots/${filename}`,
       filePath,
     };
-  }
+  },
 );
 
 // Input capture IPC handlers
@@ -520,7 +510,7 @@ ipcMain.handle(
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send("action", action);
           }
-        }
+        },
       );
       return { success: true as const };
     } catch (error) {
@@ -528,7 +518,7 @@ ipcMain.handle(
       console.error("Failed to start input capture:", message);
       return { success: false as const, error: message };
     }
-  }
+  },
 );
 
 ipcMain.handle("stopInputCapture", () => {
