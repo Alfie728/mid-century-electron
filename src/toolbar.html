@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recording Toolbar</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@5"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+      /* Make the window draggable - vibrancy provides the background */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+        -webkit-app-region: drag;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* Support dark mode text */
+        color-scheme: light dark;
+      }
+      #root {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      /* Make interactive elements clickable */
+      button,
+      select,
+      input,
+      [data-clickable] {
+        -webkit-app-region: no-drag;
+        cursor: pointer;
+      }
+      /* Dark mode support */
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: white;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
