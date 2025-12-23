@@ -149,6 +149,7 @@ export class InputService {
     this.callback = null;
     this.isLeftButtonDown = false;
     this.isDragging = false;
+    this.clickCount = 0;
     console.log("InputService stopped");
   }
 
