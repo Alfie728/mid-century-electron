@@ -1,6 +1,15 @@
 import { Action, ActionType } from "./types";
-import iohookMacos, { type EventData, type MacOSEventHook } from "iohook-macos";
+import { type EventData, type MacOSEventHook } from "iohook-macos";
 import { macKeyCodeToKeyAndCode } from "./macosKeyMap";
+
+// Lazy load native module to avoid startup crashes
+let _iohookMacos: typeof import("iohook-macos").default | null = null;
+function getIohookMacosModule(): typeof import("iohook-macos").default {
+  if (!_iohookMacos) {
+    _iohookMacos = require("iohook-macos").default || require("iohook-macos");
+  }
+  return _iohookMacos;
+}
 
 type ActionCallback = (action: Action) => void;
 type Coords = { x: number; y: number };
@@ -50,7 +59,7 @@ export class InputService {
       throw new Error("Global input capture is only supported on macOS.");
     }
     try {
-      this.iohook = iohookMacos;
+      this.iohook = getIohookMacosModule();
       return this.iohook;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -62,7 +71,7 @@ export class InputService {
           "Fix:",
           "  - Ensure Xcode Command Line Tools are installed",
           "  - Run: npm run rebuild",
-        ].join("\n"),
+        ].join("\n")
       );
     }
   }
@@ -159,10 +168,7 @@ export class InputService {
     }
   }
 
-  private createBaseAction(
-    type: ActionType,
-    coords: Coords,
-  ): Action {
+  private createBaseAction(type: ActionType, coords: Coords): Action {
     const now = Date.now();
     return {
       actionId: generateActionId(),
@@ -174,7 +180,11 @@ export class InputService {
     };
   }
 
-  private emit(type: ActionType, coords: Coords, enrich?: (action: Action) => void) {
+  private emit(
+    type: ActionType,
+    coords: Coords,
+    enrich?: (action: Action) => void
+  ) {
     const action = this.createBaseAction(type, coords);
     enrich?.(action);
     this.emitAction(action);
@@ -246,7 +256,7 @@ export class InputService {
     const timeSinceLastClick = now - this.lastClickTime;
     const distance = Math.sqrt(
       Math.pow(coords.x - this.lastClickCoords.x, 2) +
-        Math.pow(coords.y - this.lastClickCoords.y, 2),
+        Math.pow(coords.y - this.lastClickCoords.y, 2)
     );
 
     if (
@@ -351,4 +361,3 @@ export class InputService {
 
 // Export singleton instance
 export const inputService = new InputService();
-

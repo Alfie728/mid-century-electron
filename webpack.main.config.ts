@@ -17,8 +17,8 @@ export const mainConfig: Configuration = {
   resolve: {
     extensions: [".js", ".ts", ".jsx", ".tsx", ".css", ".json"],
   },
-  // Externals: don't bundle native modules, load them from node_modules at runtime
+  // Exclude native modules from webpack bundling - let Electron handle them directly
   externals: {
-    "iohook-macos": "commonjs iohook-macos",
+    "iohook-macos": "commonjs2 iohook-macos",
   },
 };
