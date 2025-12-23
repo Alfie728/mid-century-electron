@@ -6,6 +6,7 @@
   "main": ".webpack/main",
   "scripts": {
     "start": "electron-forge start",
+    "rebuild": "electron-rebuild -f -w iohook-macos",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
@@ -45,8 +46,12 @@
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
+    "iohook-macos": "^1.2.1",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.1.17"
+  },
+  "overrides": {
+    "@electron/node-gyp": "10.2.0-electron.1"
   }
 }
