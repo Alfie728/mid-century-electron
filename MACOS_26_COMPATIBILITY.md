@@ -12,8 +12,10 @@ The crash occurs during Electron's native V8/Chromium initialization, **before**
 
 Related issues:
 
+- **[Electron #49105](https://github.com/electron/electron/issues/49105)** - "macOS Crash on startup" (Electron 39.2.4, macOS 26.1) - _Closed as not planned_
+- **[Electron #49185](https://github.com/electron/electron/issues/49185)** - Similar crash on macOS 26 with `ElectronMain` crash
 - [VS Code #278451](https://github.com/microsoft/vscode/issues/278451) - Similar crash in VS Code
-- The crash involves `v8::CpuProfileNode::GetNodeId()` and V8 initialization code
+- The crash involves `rust_png$cxxbridge1`, `v8::CpuProfileNode::GetNodeId()` and V8 initialization code
 
 ## Current Workarounds
 
