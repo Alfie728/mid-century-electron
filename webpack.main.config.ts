@@ -1,4 +1,6 @@
 import type { Configuration } from "webpack";
+import path from "path";
+import CopyWebpackPlugin from "copy-webpack-plugin";
 
 import { rules } from "./webpack.rules";
 import { plugins } from "./webpack.plugins";
@@ -13,12 +15,18 @@ export const mainConfig: Configuration = {
   module: {
     rules,
   },
-  plugins,
+  plugins: [
+    ...plugins,
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: path.resolve(__dirname, "node_modules/iohook-macos/prebuilds"),
+          to: "prebuilds",
+        },
+      ],
+    }),
+  ],
   resolve: {
     extensions: [".js", ".ts", ".jsx", ".tsx", ".css", ".json"],
-  },
-  // Externals: don't bundle native modules, load them from node_modules at runtime
-  externals: {
-    "iohook-macos": "commonjs iohook-macos",
   },
 };
