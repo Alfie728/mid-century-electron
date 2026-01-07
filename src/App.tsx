@@ -220,18 +220,19 @@ export default function App() {
     }
 
     // User confirmed - now do the heavy processing
-    await stopCapture();
+    // Stop capture and finalize video in parallel with waiting for screenshot queue
+    const [, videoResult] = await Promise.all([
+      stopCapture(),
+      stopRecording(),
+      captureQueueRef.current,
+    ]);
 
-    // Video is already streamed to disk, this just finalizes it
-    const videoResult = await stopRecording();
-    await captureQueueRef.current;
-
-    // Always attempt a final screenshot for the export (best-effort).
+    // Final screenshot is best-effort and non-blocking - don't wait for it
     if (screenshotServiceRef.current) {
       enqueue(async () => {
-        await captureAndPersist("session_end", "after");
+        await captureAndPersist("session_end", "after").catch(console.error);
       });
-      await captureQueueRef.current;
+      // Don't await - let it complete in background
     }
 
     if (!videoResult) {

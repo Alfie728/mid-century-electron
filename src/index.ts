@@ -405,7 +405,7 @@ type ExportSessionBundlePayload = {
 
 function runZip(cwd: string, zipPath: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn("zip", ["-r", zipPath, ...args], { cwd });
+    const child = spawn("zip", ["-0", "-q", "-r", zipPath, ...args], { cwd });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
@@ -690,7 +690,9 @@ async function cleanupOrphanedSessions(): Promise<void> {
       const ageMs = now - stats.mtimeMs;
 
       if (ageMs > maxAgeMs) {
-        console.log(`Cleaning up orphaned session: ${sessionId} (age: ${Math.round(ageMs / 1000 / 60 / 60)}h)`);
+        console.log(
+          `Cleaning up orphaned session: ${sessionId} (age: ${Math.round(ageMs / 1000 / 60 / 60)}h)`,
+        );
         await fs.rm(sessionDir, { recursive: true, force: true });
       }
     } catch (error) {
@@ -701,7 +703,10 @@ async function cleanupOrphanedSessions(): Promise<void> {
 
 ipcMain.handle(
   "cleanupSession",
-  async (_event, sessionId: string): Promise<{ success: boolean; error?: string }> => {
+  async (
+    _event,
+    sessionId: string,
+  ): Promise<{ success: boolean; error?: string }> => {
     if (!sessionId) return { success: false, error: "sessionId is required" };
 
     try {
@@ -731,7 +736,10 @@ ipcMain.handle(
 
 ipcMain.handle(
   "markSessionExported",
-  async (_event, sessionId: string): Promise<{ success: boolean; error?: string }> => {
+  async (
+    _event,
+    sessionId: string,
+  ): Promise<{ success: boolean; error?: string }> => {
     if (!sessionId) return { success: false, error: "sessionId is required" };
 
     try {
