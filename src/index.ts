@@ -161,7 +161,10 @@ function broadcastToToolbar(channel: string, payload: unknown) {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on("ready", () => {
+app.on("ready", async () => {
+  // Clean up orphaned sessions from previous runs
+  await cleanupOrphanedSessions();
+
   createMainWindow();
   createToolbarWindow();
 });
@@ -545,3 +548,203 @@ ipcMain.handle("checkAccessibilityPermission", () => {
   // On other platforms, assume permission is granted
   return { granted: true, platform: process.platform };
 });
+
+// ============================================================================
+// Streaming Video Recording
+// ============================================================================
+
+// Track active video streams (sessionId -> file handle)
+const activeVideoStreams = new Map<
+  string,
+  { handle: fs.FileHandle; filePath: string; mimeType: string }
+>();
+
+ipcMain.handle(
+  "initVideoStream",
+  async (
+    _event,
+    payload: { sessionId: string; mimeType: string },
+  ): Promise<{ success: boolean; error?: string }> => {
+    const { sessionId, mimeType } = payload;
+    if (!sessionId) return { success: false, error: "sessionId is required" };
+
+    try {
+      const sessionSegment = safePathSegment(sessionId);
+      const ext = extensionForVideoMimeType(mimeType || "video/webm");
+      const filename = `recording-${Date.now()}.${ext}`;
+
+      const baseDir = app.getPath("userData");
+      const videoDir = path.join(baseDir, "sessions", sessionSegment, "video");
+      await fs.mkdir(videoDir, { recursive: true });
+
+      const filePath = path.join(videoDir, filename);
+      const handle = await fs.open(filePath, "w");
+
+      activeVideoStreams.set(sessionId, {
+        handle,
+        filePath,
+        mimeType: mimeType || "video/webm",
+      });
+
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  },
+);
+
+ipcMain.handle(
+  "appendVideoChunk",
+  async (
+    _event,
+    payload: { sessionId: string; chunk: ArrayBuffer },
+  ): Promise<{ success: boolean; error?: string }> => {
+    const { sessionId, chunk } = payload;
+    const stream = activeVideoStreams.get(sessionId);
+    if (!stream) {
+      return { success: false, error: "No active video stream for session" };
+    }
+
+    try {
+      await stream.handle.write(new Uint8Array(chunk));
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  },
+);
+
+ipcMain.handle(
+  "finalizeVideoStream",
+  async (
+    _event,
+    payload: { sessionId: string },
+  ): Promise<{
+    success: boolean;
+    videoRef?: string;
+    filePath?: string;
+    mimeType?: string;
+    error?: string;
+  }> => {
+    const { sessionId } = payload;
+    const stream = activeVideoStreams.get(sessionId);
+    if (!stream) {
+      return { success: false, error: "No active video stream for session" };
+    }
+
+    try {
+      await stream.handle.close();
+      activeVideoStreams.delete(sessionId);
+
+      const filename = path.basename(stream.filePath);
+      return {
+        success: true,
+        videoRef: `video/${filename}`,
+        filePath: stream.filePath,
+        mimeType: stream.mimeType,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      activeVideoStreams.delete(sessionId);
+      return { success: false, error: message };
+    }
+  },
+);
+
+// ============================================================================
+// Session Cleanup
+// ============================================================================
+
+async function cleanupOrphanedSessions(): Promise<void> {
+  const baseDir = app.getPath("userData");
+  const sessionsDir = path.join(baseDir, "sessions");
+
+  try {
+    await fs.access(sessionsDir);
+  } catch {
+    // Sessions directory doesn't exist, nothing to clean up
+    return;
+  }
+
+  const sessions = await fs.readdir(sessionsDir);
+  const now = Date.now();
+  const maxAgeMs = 24 * 60 * 60 * 1000; // 24 hours
+
+  for (const sessionId of sessions) {
+    const sessionDir = path.join(sessionsDir, sessionId);
+    const markerPath = path.join(sessionDir, ".exported");
+
+    try {
+      // Check if session was successfully exported
+      await fs.access(markerPath);
+      // Marker exists, session was exported - skip cleanup
+      continue;
+    } catch {
+      // No marker, check age
+    }
+
+    try {
+      const stats = await fs.stat(sessionDir);
+      const ageMs = now - stats.mtimeMs;
+
+      if (ageMs > maxAgeMs) {
+        console.log(`Cleaning up orphaned session: ${sessionId} (age: ${Math.round(ageMs / 1000 / 60 / 60)}h)`);
+        await fs.rm(sessionDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      console.error(`Failed to clean up session ${sessionId}:`, error);
+    }
+  }
+}
+
+ipcMain.handle(
+  "cleanupSession",
+  async (_event, sessionId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!sessionId) return { success: false, error: "sessionId is required" };
+
+    try {
+      const sessionSegment = safePathSegment(sessionId);
+      const baseDir = app.getPath("userData");
+      const sessionDir = path.join(baseDir, "sessions", sessionSegment);
+
+      // Close any active video stream for this session
+      const stream = activeVideoStreams.get(sessionId);
+      if (stream) {
+        try {
+          await stream.handle.close();
+        } catch {
+          // Ignore close errors
+        }
+        activeVideoStreams.delete(sessionId);
+      }
+
+      await fs.rm(sessionDir, { recursive: true, force: true });
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  },
+);
+
+ipcMain.handle(
+  "markSessionExported",
+  async (_event, sessionId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!sessionId) return { success: false, error: "sessionId is required" };
+
+    try {
+      const sessionSegment = safePathSegment(sessionId);
+      const baseDir = app.getPath("userData");
+      const sessionDir = path.join(baseDir, "sessions", sessionSegment);
+      const markerPath = path.join(sessionDir, ".exported");
+
+      await fs.writeFile(markerPath, new Date().toISOString(), "utf8");
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: message };
+    }
+  },
+);
