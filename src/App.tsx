@@ -205,27 +205,27 @@ export default function App() {
     const createdAt = getSessionStartTimeMs();
     const endedAt = Date.now();
 
-    // Show save dialog IMMEDIATELY - don't wait for video processing
+    // Stop recording IMMEDIATELY when user clicks stop
+    stopCapture();
+
+    // Start video finalization (don't await yet - let it run in background)
+    const videoResultPromise = stopRecording();
+
+    // Show save dialog while video finalizes in background
     const { canceled, filePath } = (await ipcRenderer.invoke(
       "showSaveExportDialog",
       `session-${currentSessionId}.zip`,
     )) as { canceled: boolean; filePath?: string };
 
+    // Now wait for video finalization to complete
+    const videoResult = await videoResultPromise;
+    await captureQueueRef.current;
+
     if (canceled || !filePath) {
-      // User canceled - stop recording and cleanup
-      await stopCapture();
-      await stopRecording();
+      // User canceled - cleanup
       await ipcRenderer.invoke("cleanupSession", currentSessionId);
       return;
     }
-
-    // User confirmed - now do the heavy processing
-    // Stop capture and finalize video in parallel with waiting for screenshot queue
-    const [, videoResult] = await Promise.all([
-      stopCapture(),
-      stopRecording(),
-      captureQueueRef.current,
-    ]);
 
     // Final screenshot is best-effort and non-blocking - don't wait for it
     if (screenshotServiceRef.current) {
