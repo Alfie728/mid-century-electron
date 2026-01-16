@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ipcRenderer } from "electron";
 import { useDesktopSources } from "./hooks/useDesktopSources";
 import { useDesktopPreview } from "./hooks/useDesktopPreview";
-import { useRecorder } from "./hooks/useRecorder";
+import { useRecorder, VideoStreamResult } from "./hooks/useRecorder";
 import { useActions } from "./hooks/useActions";
 import { createScreenshotService, ScreenshotService } from "./renderer/screenshotService";
 import { persistScreenshot } from "./renderer/persistScreenshot";
-import { persistVideo } from "./renderer/persistVideo";
-import { exportSessionBundle, ScreenshotExportMeta } from "./renderer/exportSessionBundle";
+import type { ScreenshotExportMeta } from "./renderer/exportSessionBundle";
 
 // Generate a unique session ID
 function generateSessionId(): string {
@@ -173,12 +172,14 @@ export default function App() {
 
   // Combined start handler
   const handleStart = useCallback(async () => {
-    sessionIdRef.current = generateSessionId();
+    const sessionId = generateSessionId();
+    sessionIdRef.current = sessionId;
     screenshotMetaRef.current = [];
     lastSeenActionIdRef.current = "";
     clearActions();
     setInputCaptureError(null);
-    startRecording();
+    // Start recording with sessionId for streaming to disk
+    await startRecording(sessionId);
     if (videoRef.current) {
       const service = createScreenshotService(videoRef.current);
       screenshotServiceRef.current = service;
@@ -189,7 +190,7 @@ export default function App() {
       }
     }
     try {
-      await startCapture(sessionIdRef.current);
+      await startCapture(sessionId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setInputCaptureError(message);
@@ -198,37 +199,64 @@ export default function App() {
 
   // Combined stop handler
   const handleStop = useCallback(async () => {
-    await stopCapture();
-    const videoBlob = await stopRecording();
-    await captureQueueRef.current;
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) return;
 
-    // Always attempt a final screenshot for the export (best-effort).
-    if (sessionIdRef.current && screenshotServiceRef.current) {
-      enqueue(async () => {
-        await captureAndPersist("session_end", "after");
-      });
-      await captureQueueRef.current;
-    }
-
-    if (!sessionIdRef.current || !videoBlob) return;
-
-    const persistedVideo = await persistVideo(sessionIdRef.current, videoBlob);
     const createdAt = getSessionStartTimeMs();
     const endedAt = Date.now();
 
-    const exportResult = await exportSessionBundle({
-      sessionId: sessionIdRef.current,
+    // Stop recording IMMEDIATELY when user clicks stop
+    stopCapture();
+
+    // Start video finalization (don't await yet - let it run in background)
+    const videoResultPromise = stopRecording();
+
+    // Show save dialog while video finalizes in background
+    const { canceled, filePath } = (await ipcRenderer.invoke(
+      "showSaveExportDialog",
+      `session-${currentSessionId}.zip`,
+    )) as { canceled: boolean; filePath?: string };
+
+    // Now wait for video finalization to complete
+    const videoResult = await videoResultPromise;
+    await captureQueueRef.current;
+
+    if (canceled || !filePath) {
+      // User canceled - cleanup
+      await ipcRenderer.invoke("cleanupSession", currentSessionId);
+      return;
+    }
+
+    // Final screenshot is best-effort and non-blocking - don't wait for it
+    if (screenshotServiceRef.current) {
+      enqueue(async () => {
+        await captureAndPersist("session_end", "after").catch(console.error);
+      });
+      // Don't await - let it complete in background
+    }
+
+    if (!videoResult) {
+      console.error("No video result after stopping recording");
+      return;
+    }
+
+    // Export - video is already on disk
+    const exportResult = (await ipcRenderer.invoke("exportSessionBundle", {
+      sessionId: currentSessionId,
       createdAt,
       endedAt,
       actions,
       screenshots: screenshotMetaRef.current,
-      video: { videoRef: persistedVideo.videoRef, mimeType: persistedVideo.mimeType },
-    });
-    if (exportResult) {
-      console.log("Exported session bundle:", exportResult.zipPath);
-    }
+      video: { videoRef: videoResult.videoRef, mimeType: videoResult.mimeType },
+      zipPath: filePath,
+    })) as { zipPath: string };
+
+    // Mark session as successfully exported
+    await ipcRenderer.invoke("markSessionExported", currentSessionId);
+
+    console.log("Exported session bundle:", exportResult.zipPath);
     console.log(
-      `Session ${sessionIdRef.current} ended with ${actions.length} actions`,
+      `Session ${currentSessionId} ended with ${actions.length} actions`,
     );
   }, [actions, getSessionStartTimeMs, stopCapture, stopRecording]);
 

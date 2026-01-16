@@ -27,11 +27,19 @@ export async function exportSessionBundle(params: {
     `session-${params.sessionId}.zip`,
   )) as { canceled: boolean; filePath?: string };
 
-  if (canceled || !filePath) return null;
+  if (canceled || !filePath) {
+    // User canceled - clean up the session files
+    await ipcRenderer.invoke("cleanupSession", params.sessionId);
+    return null;
+  }
 
-  return (await ipcRenderer.invoke("exportSessionBundle", {
+  const result = (await ipcRenderer.invoke("exportSessionBundle", {
     ...params,
     zipPath: filePath,
   })) as { zipPath: string };
-}
 
+  // Mark session as successfully exported
+  await ipcRenderer.invoke("markSessionExported", params.sessionId);
+
+  return result;
+}
