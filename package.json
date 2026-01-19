@@ -9,6 +9,7 @@
     "rebuild": "electron-rebuild -f -w iohook-macos",
     "package": "electron-forge package",
     "make": "electron-forge make",
+    "make:signed": "electron-forge make && node scripts/sign-and-notarize.js",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx ."
   },
@@ -33,9 +34,10 @@
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
-    "css-loader": "^6.11.0",
     "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^6.11.0",
     "daisyui": "^5.5.8",
+    "dotenv": "^17.2.3",
     "electron": "39.2.5",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -46,6 +48,7 @@
     "typescript": "~4.5.4"
   },
   "dependencies": {
+    "@electron/notarize": "^3.1.1",
     "electron-squirrel-startup": "^1.0.1",
     "iohook-macos": "^1.2.1",
     "react": "^19.2.1",
@@ -53,6 +56,8 @@
     "tailwindcss": "^4.1.17"
   },
   "overrides": {
-    "@electron/node-gyp": "10.2.0-electron.1"
+    "@electron/node-gyp": "10.2.0-electron.1",
+    "@electron/notarize": "^3.1.1",
+    "@electron/osx-sign": "^2.3.0"
   }
 }
