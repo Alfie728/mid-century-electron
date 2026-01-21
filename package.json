@@ -1,8 +1,8 @@
 {
-  "name": "cua-electron",
-  "productName": "CUA Electron",
+  "name": "glmpse",
+  "productName": "Glmpse",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "Screen and action capture tool",
   "main": ".webpack/main",
   "scripts": {
     "start": "electron-forge start",

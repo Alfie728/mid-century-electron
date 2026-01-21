@@ -4,6 +4,7 @@ import {
   desktopCapturer,
   dialog,
   ipcMain,
+  Menu,
   screen,
 } from "electron";
 import { inputService } from "./main/inputService";
@@ -38,6 +39,53 @@ const TOOLBAR_MARGIN_BOTTOM = 24;
 // Per row of previews (16:9 thumbnail ~80px + label ~16px + gap)
 const PICKER_ROW_HEIGHT = 100;
 const PICKER_PADDING = 24; // padding around picker
+
+const createApplicationMenu = (): void => {
+  if (process.platform !== "darwin") return;
+
+  const appName = app.getName();
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: appName,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        { type: "separator" },
+        { role: "front" },
+      ],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+};
 
 const createMainWindow = (): void => {
   // Create the browser window - hidden by default, shown during recording
@@ -109,6 +157,14 @@ const createToolbarWindow = (): void => {
     toolbarWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true,
     });
+
+    // Activate app when toolbar receives focus to show menu bar
+    toolbarWindow.on("focus", () => {
+      // Only show dock if not already visible to prevent shadow flicker
+      if (app.dock && !app.dock.isVisible()) {
+        app.dock.show();
+      }
+    });
   }
 
   toolbarWindow.on("closed", () => {
@@ -164,6 +220,9 @@ function broadcastToToolbar(channel: string, payload: unknown) {
 app.on("ready", async () => {
   // Clean up orphaned sessions from previous runs
   await cleanupOrphanedSessions();
+
+  // Create application menu (macOS)
+  createApplicationMenu();
 
   createMainWindow();
   createToolbarWindow();
