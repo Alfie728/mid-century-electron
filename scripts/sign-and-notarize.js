@@ -82,10 +82,14 @@ async function signAndNotarize(appPath) {
   console.log("\n📎 Stapling notarization ticket...\n");
   run(`xcrun stapler staple "${appPath}"`);
 
-  // Clean up zip
+  // Replace notarization zip with final distributable zip (includes stapled ticket)
   fs.unlinkSync(zipPath);
+  const distZipPath = path.join(path.dirname(appPath), `${path.basename(appPath, ".app")}.zip`);
+  console.log("\n📦 Creating distributable zip...\n");
+  run(`ditto -c -k --keepParent "${appPath}" "${distZipPath}"`);
 
-  console.log("\n✅ Done! App is signed and notarized.\n");
+  console.log(`\n✅ Done! App is signed and notarized.`);
+  console.log(`📦 Distributable zip: ${distZipPath}\n`);
 }
 
 // Get app path from command line or find it
