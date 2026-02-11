@@ -68,7 +68,7 @@ async function signAndNotarize(appPath) {
   console.log("\n✅ Verifying signature...\n");
   run(`codesign -vvv --deep --strict "${appPath}"`);
 
-  // Create zip for notarization
+  // Create zip for notarization submission (Apple requires zip format)
   const appName = path.basename(appPath);
   const zipPath = path.join(path.dirname(appPath), `${appName}.zip`);
   console.log("\n📦 Creating zip for notarization...\n");
@@ -82,14 +82,21 @@ async function signAndNotarize(appPath) {
   console.log("\n📎 Stapling notarization ticket...\n");
   run(`xcrun stapler staple "${appPath}"`);
 
-  // Replace notarization zip with final distributable zip (includes stapled ticket)
+  // Clean up notarization zip
   fs.unlinkSync(zipPath);
-  const distZipPath = path.join(path.dirname(appPath), `${path.basename(appPath, ".app")}.zip`);
-  console.log("\n📦 Creating distributable zip...\n");
-  run(`ditto -c -k --keepParent "${appPath}" "${distZipPath}"`);
+
+  // Create distributable DMG
+  const dmgPath = path.join(path.dirname(appPath), `${path.basename(appPath, ".app")}.dmg`);
+  console.log("\n📦 Creating distributable DMG...\n");
+  run(`hdiutil create -volname "${path.basename(appPath, ".app")}" -srcfolder "${appPath}" -ov -format ULFO "${dmgPath}"`);
+
+  // Notarize the DMG itself
+  console.log("\n📤 Notarizing DMG...\n");
+  run(`xcrun notarytool submit "${dmgPath}" --keychain-profile "${KEYCHAIN_PROFILE}" --wait`);
+  run(`xcrun stapler staple "${dmgPath}"`);
 
   console.log(`\n✅ Done! App is signed and notarized.`);
-  console.log(`📦 Distributable zip: ${distZipPath}\n`);
+  console.log(`📦 Distributable DMG: ${dmgPath}\n`);
 }
 
 // Get app path from command line or find it
